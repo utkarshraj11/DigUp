@@ -196,7 +196,7 @@ struct PreviewPicture: View {
                 CodeLines(row: row)
                     .frame(maxWidth: size.width, maxHeight: size.height)
                     .onTapGesture(count: 2, perform: open)
-            } else if row.segment == .chunk {
+            } else if row.segment == .chunk || row.segment == .slide {
                 Passage(row: row)
                     .frame(maxWidth: size.width, maxHeight: size.height)
                     .onTapGesture(count: 2, perform: open)
@@ -239,7 +239,7 @@ struct PreviewPicture: View {
         // without its controls.
         .onDisappear { if PreviewPlayback.shared.isCurrent(row) { PreviewPlayback.shared.stop() } }
         .task(id: Previews.shared.key(row, max(size.width, size.height))) {
-            guard row.segment != .chunk, row.kind != .code else { return }
+            guard row.segment != .chunk, row.segment != .slide, row.kind != .code else { return }
             let side = max(size.width, size.height)
             image = Previews.shared.cached(row, side: side)
             loaded = image != nil
@@ -391,6 +391,9 @@ struct Passage: View {
 
     /// "Part 2 of 5", when the document has more than one.
     private var partLabel: String? {
+        if row.segment == .slide, let slide = row.loc.map(Int.init), let slides = row.info["slides"] {
+            return "Slide \(slide) of \(slides)"
+        }
         guard let part = row.loc.map(Int.init), let parts = row.info["chunks"].flatMap(Int.init), parts > 1 else {
             return nil
         }

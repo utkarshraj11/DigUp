@@ -21,6 +21,7 @@ public enum SegmentKind: String, Sendable {
     case page             // a PDF page's text
     case pageImage = "page_image"  // a PDF page rendered as an image (scans, slides)
     case chunk            // a piece of a document's text
+    case slide            // a piece of a presentation's text: loc is its slide, from 1; a long slide has several
     case audio            // a window of audio (a file or a video's soundtrack)
     case frame            // a video keyframe
     case lines            // a stretch of a code file: loc to loc_end are its first and last lines

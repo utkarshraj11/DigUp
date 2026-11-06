@@ -10,6 +10,16 @@ enum OfficeText {
     static let maxCharacters = 10_000_000
 
     static func text(of url: URL, type ext: String) throws -> String {
+        try read(url, type: ext).text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// A presentation's text a slide at a time, in the deck's order. A slide without text stays, empty: a slide's place
+    /// here is its number.
+    static func slides(of url: URL, type ext: String) throws -> [String] {
+        try read(url, type: ext).slides
+    }
+
+    private static func read(_ url: URL, type ext: String) throws -> Output {
         // An Office file with a password is an OLE compound file holding the encrypted zip.
         if isCompoundFile(url) { throw ExtractError.locked }
         let zip = try ZipArchive(url)
@@ -20,7 +30,7 @@ enum OfficeText {
         case "ods": spreadsheet(try zip.required("content.xml"), into: &out)
         default: slides(try zip.required("content.xml"), into: &out)   // odp
         }
-        return out.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return out
     }
 
     private static func isCompoundFile(_ url: URL) -> Bool {
@@ -143,8 +153,8 @@ enum OfficeText {
             }
         }
         for slide in slides where !out.full {
+            out.slide()
             guard let xml = try zip.data(slide) else { continue }
-            out.paragraph()
             drawingText(xml, into: &out)
             let links = try relationships(of: slide, in: zip)
             if let notes = links.values.first(where: { $0.type.hasSuffix("/notesSlide") }),
@@ -277,7 +287,7 @@ enum OfficeText {
             switch event {
             case .open(let name, _, let empty):
                 switch local(name) {
-                case "page": out.paragraph()
+                case "page": out.slide()
                 case "p", "h": if !empty { (inParagraph, paragraph) = (inParagraph + 1, "") }
                 case "s", "tab": if inParagraph > 0 { paragraph += " " }
                 case "line-break": if inParagraph > 0 { paragraph += "\n" }
@@ -310,6 +320,7 @@ enum OfficeText {
     /// The text being built, a line at a time, up to `maxCharacters`.
     private struct Output {
         var text = ""
+        private var slideStarts: [Int] = []   // in `text`'s UTF-8 bytes
         var full: Bool { text.utf8.count >= OfficeText.maxCharacters }
 
         mutating func line(_ line: String) {
@@ -321,6 +332,19 @@ enum OfficeText {
         /// A blank line between sheets or slides.
         mutating func paragraph() {
             if !text.isEmpty, !text.hasSuffix("\n\n") { text += "\n" }
+        }
+
+        /// The next slide starts here.
+        mutating func slide() {
+            paragraph()
+            slideStarts.append(text.utf8.count)
+        }
+
+        var slides: [String] {
+            let bytes = Array(text.utf8)
+            return zip(slideStarts, slideStarts.dropFirst() + [bytes.count]).map {
+                String(decoding: bytes[$0..<$1], as: UTF8.self)
+            }
         }
     }
 }

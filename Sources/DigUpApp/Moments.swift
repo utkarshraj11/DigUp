@@ -17,6 +17,11 @@ extension ResultRow {
         return Int(loc)
     }
 
+    /// The presentation's slide that matched (from 1).
+    var slide: Int? {
+        segment == .slide ? loc.map(Int.init) : nil
+    }
+
     /// Seconds into a recording where the match starts.
     var moment: Double? {
         guard kind == .video || kind == .audio, segment == .frame || segment == .audio else { return nil }
@@ -27,6 +32,7 @@ extension ResultRow {
     /// "0:06").
     var jump: String? {
         if let page, page > 1 { return place }
+        if let slide, slide > 1 { return place }
         if let moment, moment >= 1 { return place }
         return nil
     }
@@ -34,7 +40,7 @@ extension ResultRow {
     /// Quick Look's display state for the page or moment: what its own previews report as you page through a PDF or
     /// play a movie (`QLPreviewPanel.displayState`, "the currently displayed page … or the position in a movie").
     var quickLookState: [String: Any]? {
-        if let page, page > 1 { return ["CurrentPage": page - 1] }
+        if let page = page ?? slide, page > 1 { return ["CurrentPage": page - 1] }
         if let moment, moment >= 1 { return ["CurrentTime": moment] }
         return nil
     }
@@ -45,6 +51,7 @@ extension ResultRow {
     var openTitle: String {
         if kind == .code, !CodeEditor.current.id.isEmpty { return "Open in \(CodeEditor.current.name)" }
         if let moment, moment >= 1, Opener.jumpsToMoments(url) { return "Open at \(Self.clock(moment))" }
+        if let slide, slide > 1, Opener.jumpsToSlides(url) { return "Open at slide \(slide)" }
         return "Open"
     }
 
@@ -102,9 +109,12 @@ extension Engine {
 /// - a moment in QuickTime Player: it's asked to go there (macOS asks once whether DigUp may control it; without
 ///   that, the recording opens at the start)
 /// - a moment in IINA: its URL scheme takes a start time
+/// - a slide in Keynote or PowerPoint: they're asked to go there, like QuickTime Player
 enum Opener {
     static let quickTime = "com.apple.QuickTimePlayerX"
     static let iina = "com.colliderli.iina"
+    static let keynote = "com.apple.iWork.Keynote"
+    static let powerPoint = "com.microsoft.Powerpoint"
     /// Debug runs (`-debugOpen dry`): say how it would open, and don't.
     static var dryRun = false
 
@@ -112,6 +122,12 @@ enum Opener {
     static func jumpsToMoments(_ url: URL) -> Bool {
         guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return false }
         return [quickTime, iina].contains(Bundle(url: app)?.bundleIdentifier)
+    }
+
+    /// The file's app can be told which slide to show.
+    static func jumpsToSlides(_ url: URL) -> Bool {
+        guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return false }
+        return [keynote, powerPoint].contains(Bundle(url: app)?.bundleIdentifier)
     }
 
     /// `words`: what to search for in a PDF (`Landmark.find`).
@@ -123,9 +139,11 @@ enum Opener {
         let appID = Bundle(url: app)?.bundleIdentifier
         let appName = app.deletingPathExtension().lastPathComponent
         let moment = row.moment.flatMap { $0 >= 1 ? $0 : nil }
+        let slide = row.slide.flatMap { $0 > 1 && (appID == keynote || appID == powerPoint) ? $0 : nil }
         if dryRun {
             let how = if let words { "searching “\(words)”" }
                 else if let moment, appID == iina || appID == quickTime { "at \(ResultRow.clock(moment))" }
+                else if let slide { "at slide \(slide)" }
                 else { "at the start" }
             log("open (dry run): \(row.name) in \(appName) \(how)")
             return
@@ -143,6 +161,9 @@ enum Opener {
         } else if let moment, appID == quickTime {
             log("open: \(row.name) at \(ResultRow.clock(moment)) in QuickTime Player")
             openInQuickTime(row.url, at: moment)
+        } else if let slide {
+            log("open: \(row.name) at slide \(slide) in \(appName)")
+            run(appID == keynote ? keynoteScript : powerPointScript, on: row.url, at: slide, in: appName)
         } else {
             log("open: \(row.name)")
             NSWorkspace.shared.open(row.url)
@@ -172,7 +193,10 @@ enum Opener {
     /// osascript rather than NSAppleScript: macOS's "control QuickTime Player?" question would otherwise block the
     /// main thread until it's answered. The time goes over as whole milliseconds (a decimal point depends on locale).
     private static func openInQuickTime(_ url: URL, at seconds: Double) {
-        let script = """
+        run(quickTimeScript, on: url, at: Int(seconds * 1000), in: "QuickTime Player")
+    }
+
+    private static let quickTimeScript = """
             on run argv
                 set theFile to POSIX file (item 1 of argv)
                 set theTime to (item 2 of argv as integer) / 1000
@@ -188,9 +212,37 @@ enum Opener {
                 end tell
             end run
             """
+
+    private static let keynoteScript = """
+            on run argv
+                set theFile to POSIX file (item 1 of argv)
+                set theSlide to item 2 of argv as integer
+                tell application "Keynote"
+                    activate
+                    set theDocument to open theFile
+                    set current slide of theDocument to slide theSlide of theDocument
+                    return slide number of current slide of theDocument
+                end tell
+            end run
+            """
+
+    private static let powerPointScript = """
+            on run argv
+                set theFile to POSIX file (item 1 of argv)
+                set theSlide to item 2 of argv as integer
+                tell application "Microsoft PowerPoint"
+                    activate
+                    open theFile
+                    go to slide (view of active window) number theSlide
+                    return theSlide
+                end tell
+            end run
+            """
+
+    private static func run(_ script: String, on url: URL, at place: Int, in app: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script, url.path, String(Int(seconds * 1000))]
+        process.arguments = ["-e", script, url.path, String(place)]
         let errors = Pipe(), output = Pipe()
         process.standardError = errors
         process.standardOutput = output
@@ -198,15 +250,15 @@ enum Opener {
             guard process.terminationStatus != 0 else {
                 let at = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
                 DispatchQueue.main.async {
-                    log("open: QuickTime Player is at \(at.trimmingCharacters(in: .whitespacesAndNewlines)) s")
+                    log("open: \(app) is at \(at.trimmingCharacters(in: .whitespacesAndNewlines))")
                 }
                 return
             }
             let message = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             DispatchQueue.main.async {
-                log("open: QuickTime Player didn't go to the moment (\(message.trimmingCharacters(in: .whitespacesAndNewlines)))")
+                log("open: \(app) didn't go there (\(message.trimmingCharacters(in: .whitespacesAndNewlines)))")
                 // Not allowed to control it (-1743), no answer to macOS's question (-1712), or any other failure: open
-                // it the plain way (a recording that did open just comes forward).
+                // it the plain way (a file that did open just comes forward).
                 NSWorkspace.shared.open(url)
             }
         }

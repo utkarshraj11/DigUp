@@ -200,6 +200,89 @@ import Compression
             """)
     }
 
+    @Test func slidesComeSeparatelyInTheDecksOrder() throws {
+        let url = file("lancement.pptx")
+        try OfficeFiles.zip(Self.deck, to: url)
+        let slides = try OfficeText.slides(of: url, type: "pptx")
+        #expect(slides.count == 2)
+        #expect(slides[0].contains("Rappeler le devis du couvreur"))
+        #expect(!slides[0].contains("Annexe"))
+        #expect(slides[1].hasPrefix("Annexe : contacts"))
+    }
+
+    @Test func openDocumentSlidesComeSeparately() throws {
+        let url = file("bilan.odp")
+        try OfficeFiles.zip(Self.impress, to: url)
+        let slides = try OfficeText.slides(of: url, type: "odp")
+        #expect(slides.count == 2)
+        #expect(slides[1].hasPrefix("Perspectives"))
+        #expect(!slides[0].contains("Perspectives"))
+    }
+
+    @Test func aSlideWithoutTextKeepsItsNumber() {
+        let (chunks, numbers) = DocExtractor.chunks(ofSlides: ["premier", "", "troisième"], limit: 10)
+        #expect(chunks == ["premier", "troisième"])
+        #expect(numbers == [1, 3])
+    }
+
+    @Test func noChunkCrossesTwoSlides() {
+        let long = String(repeating: "toiture ", count: 600), slides = [long, "dernière"]
+        let (chunks, numbers) = DocExtractor.chunks(ofSlides: slides, limit: 100)
+        #expect(chunks.count > 2)
+        #expect(chunks.count == numbers.count)
+        #expect(chunks.last == "dernière")
+        #expect(numbers.dropLast().allSatisfy { $0 == 1 })
+        #expect(numbers.last == 2)
+    }
+
+    @Test func aDeckIsIndexedBySlide() throws {
+        try OfficeFiles.zip(Self.deck, to: file("lancement.pptx"))
+        let store = try IndexStore(directory: folder.appendingPathComponent("index"))
+        let indexer = try Indexer(store: store, options: IndexOptions(), makeEmbedder: { FakeEmbedder() })
+        _ = try indexer.sync([folder.appendingPathComponent("files")])
+        try indexer.run()
+        var places: [Int] = []
+        try store.db.query("SELECT loc FROM segments WHERE kind = 'slide' ORDER BY loc") { places.append(Int($0.double(0))) }
+        #expect(places == [1, 2])
+        var slides: String?
+        try store.db.query("SELECT json_extract(info, '$.slides') FROM files") { slides = $0.text(0) }
+        #expect(slides == "2")
+        var id: Int64 = 0
+        try store.db.query("SELECT id FROM files") { id = $0.int(0) }
+        #expect(try store.lastPlace(of: id) == 2)
+
+        // A deck read before slides were numbered is read again, once.
+        #expect(try store.readAgainOnce() == 1)
+        #expect(try store.readAgainOnce() == 0)
+    }
+
+    @Test func aLongDeckIsReadInStepsWithoutRepeats() throws {
+        let parts = Self.deck.map { part -> (String, String) in
+            // One slide of ~18,000 characters: ten chunks, more than a step.
+            let long = String(repeating: "toiture devis ", count: 1300)
+            return (part.0, part.1.replacingOccurrences(of: "Annexe : contacts", with: long))
+        }
+        try OfficeFiles.zip(parts, to: file("long.pptx"))
+        let store = try IndexStore(directory: folder.appendingPathComponent("index"))
+        var options = IndexOptions()
+        options.docStep = 3
+        let indexer = try Indexer(store: store, options: options, makeEmbedder: { FakeEmbedder() })
+        _ = try indexer.sync([folder.appendingPathComponent("files")])
+        try indexer.run()
+        var first = 0
+        try store.db.query("SELECT COUNT(*) FROM segments WHERE kind = 'slide'") { first = Int($0.int(0)) }
+        #expect(first == 3)
+        try indexer.finishLongFiles()
+        var total = 0, chunks: String?, state: String?
+        try store.db.query("SELECT COUNT(*) FROM segments WHERE kind = 'slide'") { total = Int($0.int(0)) }
+        try store.db.query("SELECT json_extract(info, '$.chunks'), state FROM files") {
+            (chunks, state) = ($0.text(0), $0.text(1))
+        }
+        #expect(state == "done")
+        #expect(chunks == "\(total)")
+        #expect(total > 10)
+    }
+
     @Test func openDocumentSpreadsheet() throws {
         let url = file("inventaire.ods")
         try OfficeFiles.zip(Self.calc, to: url)

@@ -180,6 +180,7 @@ func location(_ hit: SearchHit) -> String {
     case .page, .pageImage: hit.loc.map { "p. \(Int($0))" } ?? ""
     case .audio, .frame: hit.loc.map { "at \(clock($0))" + (hit.segment == .audio ? " (sound)" : "") } ?? ""
     case .chunk: hit.loc.map { "part \(Int($0))" } ?? ""
+    case .slide: hit.loc.map { "slide \(Int($0))" } ?? ""
     case .lines: hit.loc.map { "lines \(Int($0))–\(Int(hit.locEnd ?? $0))" + (hit.focus.map { ", opens at \(Int($0))" } ?? "") } ?? ""
     case .cells: hit.loc.map { $0 == hit.locEnd ? "cell \(Int($0))" : "cells \(Int($0))–\(Int(hit.locEnd ?? $0))" } ?? ""
     case .ocr: "text in image"

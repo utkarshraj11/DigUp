@@ -103,6 +103,17 @@ enum DocExtractor {
         return result + text[last...]
     }
 
+    /// A deck's slides cut into chunks, each with its slide's number (from 1): no chunk crosses two slides.
+    static func chunks(ofSlides slides: [String], limit: Int) -> (chunks: [String], numbers: [Int]) {
+        var chunks: [String] = [], numbers: [Int] = []
+        for (index, slide) in slides.enumerated() where chunks.count < limit {
+            let pieces = Self.chunks(slide, limit: limit - chunks.count)
+            chunks += pieces
+            numbers += repeatElement(index + 1, count: pieces.count)
+        }
+        return (chunks, numbers)
+    }
+
     /// Splits text into ~`size`-character pieces (~450 tokens) that overlap a little, breaking at whitespace.
     static func chunks(_ text: String, size: Int = 1800, overlap: Int = 200, limit: Int) -> [String] {
         let clean = text

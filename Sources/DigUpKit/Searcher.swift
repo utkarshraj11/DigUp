@@ -80,7 +80,7 @@ public final class Searcher {
             let (kind, place) = (row.text(4), row.isNull(5) ? 0 : Int(row.double(5)))
             let later = row.text(6) == "pdf"
                 ? kind != SegmentKind.chunk.rawValue && Int(row.int(7)) > steps.bigPDFPages && place > steps.pdfStep
-                : kind == SegmentKind.chunk.rawValue && place > steps.docStep
+                : (kind == SegmentKind.chunk.rawValue || kind == SegmentKind.slide.rawValue) && place > steps.docStep
             rowSetsScale.append(!later)
         }
         self.matrix = matrix

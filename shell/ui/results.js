@@ -30,6 +30,7 @@ function placeOf(hit) {
   switch (hit.segment) {
     case "page":
     case "page_image": return `p. ${Math.trunc(hit.loc)}`;
+    case "slide": return `slide ${Math.trunc(hit.loc)}`;
     case "frame": return clock(hit.loc);
     case "audio": return hit.kind === "video" ? `♪ ${clock(hit.loc)}` : clock(hit.loc);
     case "lines": {
@@ -107,6 +108,7 @@ function reasonOf(hit) {
     case "page": return `Matches the text on ${page}`;
     case "page_image": return `Matches ${page}`;
     case "chunk": return "Matches its text";
+    case "slide": return `Matches the text on ${placeOf(hit) ?? "a slide"}`;
     case "lines":
     case "cells": return `Matches ${span(hit) ?? "the code"}`;
     default: return "Matches its name";

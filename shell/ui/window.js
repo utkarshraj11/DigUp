@@ -569,6 +569,11 @@ function previewPicture(hit) {
     addPlace(box, span(hit));
     return box;
   }
+  if (hit.segment === "slide") {
+    box.append(passage(hit));
+    if (hit.loc != null && hit.info?.slides) addPlace(box, `Slide ${Math.trunc(hit.loc)} of ${hit.info.slides}`);
+    return box;
+  }
   if (hit.segment === "chunk") {
     box.append(passage(hit));
     const parts = Number(hit.info?.chunks || 0);
@@ -666,7 +671,7 @@ function renderBig() {
 /// passage or the lines of code.
 function bigView(hit) {
   const view = element("div", "view");
-  if (hit.kind === "code" || hit.segment === "chunk") {
+  if (hit.kind === "code" || hit.segment === "chunk" || hit.segment === "slide") {
     view.classList.add("text");
     view.append(hit.kind === "code" ? codeLines(hit) : passage(hit));
     return view;

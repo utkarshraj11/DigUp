@@ -70,6 +70,7 @@ struct ResultRow: Identifiable, Equatable {
         guard let loc else { return nil }
         switch segment {
         case .page, .pageImage: return "p. \(Int(loc))"
+        case .slide: return "slide \(Int(loc))"
         case .frame: return Self.clock(loc)
         case .audio: return kind == .video ? "♪ \(Self.clock(loc))" : Self.clock(loc)
         case .lines: return Int(loc) == Int(locEnd ?? loc) ? "L\(Int(loc))" : "L\(Int(loc))–\(Int(locEnd ?? loc))"
@@ -97,16 +98,17 @@ struct ResultRow: Identifiable, Equatable {
     /// Why it's here, in a few words: "Matches the picture", "Matches the frame at 0:06".
     var reason: String {
         guard matchedMeaning else { return matchedWords ? "Has your words" : "Matches its name" }
-        let place = loc.map(Self.clock) ?? ""
+        let at = loc.map(Self.clock) ?? ""
         let page = loc.map { "page \(Int($0))" } ?? "a page"
         switch segment {
         case .image: return kind == .screenshot ? "Matches what's on screen" : "Matches the picture"
         case .ocr: return "Matches the text in it"
-        case .frame: return "Matches the frame at \(place)"
-        case .audio: return kind == .video ? "Matches the sound at \(place)" : "Matches what's heard at \(place)"
+        case .frame: return "Matches the frame at \(at)"
+        case .audio: return kind == .video ? "Matches the sound at \(at)" : "Matches what's heard at \(at)"
         case .page: return "Matches the text on \(page)"
         case .pageImage: return "Matches \(page)"
         case .chunk: return "Matches its text"
+        case .slide: return "Matches the text on \(place ?? "a slide")"
         case .name: return "Matches its name"
         case .lines, .cells: return "Matches \(span ?? "the code")"
         }
