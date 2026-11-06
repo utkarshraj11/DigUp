@@ -64,7 +64,7 @@ PLIST="$APP/Contents/Info.plist"
 
 # Nested code first, then the bundle. The helper needs no entitlements: llama.cpp compiles its Metal shaders at run
 # time through Metal's own compiler service, which the hardened runtime allows (checked 2026-10-08). The app's one
-# entitlement lets it ask QuickTime Player to open a recording at a moment.
+# entitlement lets it ask QuickTime Player, Keynote or PowerPoint to go to a moment or a slide.
 IDENTITY="${SIGN_ID:-$( [[ -f .sign-id ]] && head -1 .sign-id || echo - )}"
 TIMESTAMP=$([[ "${RELEASE:-}" == 1 ]] && echo --timestamp || echo --timestamp=none)
 codesign --force --sign "$IDENTITY" --options runtime $TIMESTAMP "$APP/Contents/Helpers/digup"

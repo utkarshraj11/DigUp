@@ -31,7 +31,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>DigUp asks QuickTime Player to open a recording at the moment that matched your search.</string>
+	<string>DigUp asks the app that opens a result to go to the moment or slide that matched your search.</string>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>DigUp indexes the folders you choose so you can search them by describing what's inside. Everything stays on this Mac.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
